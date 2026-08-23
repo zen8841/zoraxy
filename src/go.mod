@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/armon/go-radix v1.0.0
 	github.com/c0va23/go-proxyprotocol v0.9.1
-	github.com/go-acme/lego/v5 v5.3.1
+	github.com/go-acme/lego/v5 v5.4.0
 	github.com/go-ping/ping v1.1.0
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/google/uuid v1.6.0
