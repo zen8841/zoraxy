@@ -326,6 +326,12 @@ func RegisterAuthAPIs(requireAuth bool, targetMux *http.ServeMux) {
 			utils.SendJSONResponse(w, "true")
 		}
 	})
+	targetMux.HandleFunc("/api/auth/authEnabled", func(w http.ResponseWriter, r *http.Request) {
+		//Report if the management interface authentication is enabled
+		//so the UI can hide auth related elements (e.g. logout button) in noauth mode
+		js, _ := json.Marshal(requireAuth)
+		utils.SendJSONResponse(w, string(js))
+	})
 	targetMux.HandleFunc("/api/auth/username", func(w http.ResponseWriter, r *http.Request) {
 		username, err := authAgent.GetUserName(w, r)
 		if err != nil {
