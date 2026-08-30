@@ -97,6 +97,21 @@ type DpcoreOptions struct {
 	MaxConcurrentConnection int           //Maxmium concurrent requests to this server
 	ResponseHeaderTimeout   int64         //Timeout for response header, set to 0 for default
 	DevelopmentMode         bool          //Enable development mode for this proxy core
+	UpstreamTLSServerName   string        //Override the TLS SNI / cert verification hostname for HTTPS upstreams. Empty = derive from the upstream address
+}
+
+// sniServerName normalizes a host value into a usable TLS SNI ServerName.
+// It strips any port and returns "" if the result is empty or an IP literal,
+// which Go omits from the ClientHello anyway (crypto/tls hostnameInSNI, RFC 6066).
+func sniServerName(host string) string {
+	host = strings.TrimSpace(host)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if host == "" || net.ParseIP(host) != nil {
+		return ""
+	}
+	return host
 }
 
 func NewDynamicProxyCore(target *url.URL, prepender string, dpcOptions *DpcoreOptions) *ReverseProxy {
@@ -119,7 +134,15 @@ func NewDynamicProxyCore(target *url.URL, prepender string, dpcOptions *DpcoreOp
 	// per-request transport cloning that defeats connection pooling.
 	useRequestHostAsSNI := false
 	if strings.EqualFold(target.Scheme, "https") {
-		serverName := target.Hostname()
+		// An admin configured SNI (see #1088 follow up, from the endpoint's
+		// "Overwrite Host Header" value) takes precedence over the upstream address.
+		// This allows an upstream to be addressed by a name that its certificate does
+		// not cover (e.g. a Docker service name) while keeping certificate
+		// verification enabled and verified against the configured hostname.
+		serverName := sniServerName(dpcOptions.UpstreamTLSServerName)
+		if serverName == "" {
+			serverName = target.Hostname()
+		}
 		cfg := &tls.Config{ServerName: serverName}
 		if dpcOptions.IgnoreTLSVerification {
 			cfg.InsecureSkipVerify = true
@@ -366,12 +389,8 @@ func (p *ReverseProxy) ProxyHTTP(rw http.ResponseWriter, req *http.Request, rrr 
 		// (see NewDynamicProxyCore). Derive it from the request host so the
 		// backend still receives a valid SNI and can present the right cert.
 		if p.useRequestHostAsSNI {
-			serverName := outreq.Host
-			if h, _, err := net.SplitHostPort(serverName); err == nil {
-				serverName = h
-			}
 			// Skip if empty or itself an IP (Go would omit an IP from the ClientHello).
-			if serverName != "" && net.ParseIP(serverName) == nil {
+			if serverName := sniServerName(outreq.Host); serverName != "" {
 				if !needClone {
 					trc = tr.Clone()
 					needClone = true
